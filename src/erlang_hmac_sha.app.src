@@ -1,0 +1,12 @@
+{application, erlang_hmac_sha,
+ [
+  {description, ""},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { erlang_hmac_sha_app, []}},
+  {env, []}
+ ]}.
