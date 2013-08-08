@@ -11,7 +11,7 @@
 %%% sign/5 is used client-side to sign a request
 %%% - it returns an HTTPAuthorization header
 %%%
-%%% authorize_request/1 takes a mochiweb Request as an arguement
+%%% [mochi_|cowboy_]authorize_request/1 takes a Request as an arguement
 %%% and checks that the request matches the signature
 %%%
 %%% get_api_keypair/0 creates a pair of public/private keys
@@ -22,7 +22,8 @@
 %%% THE AMAZON API MUNGES HOSTNAME AND PATHS IN A CUSTOM WAY
 %%% THIS IMPLEMENTATION DOESN'T
 -export([
-         authorize_request/1,
+         cowboy_authorize_request/1,
+         mochi_authorize_request/1,
          sign/5,
          get_api_keypair/0
         ]).
@@ -33,7 +34,36 @@
 %%%                                                                          %%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-authorize_request(Req) ->
+cowboy_authorize_request(Req) ->
+    {Method, _}  = cowboy_req:method(method),
+    Method2      = binary_to_list(Method),
+    {Path, _}    = cowboy_req:path(path),
+    Path2        = binary_to_list(Path),
+    {Headers, _} = cowboy_req:headers(Req),
+    Headers2     = [{binary_to_list(K), binary_to_list(V)}
+                    || {K, V} <- Headers],
+    Headers3     = normalise(Headers2),
+    ContentMD5   = get_header(Headers3, "content-md5"),
+    ContentType  = get_header(Headers3, "content-type"),
+    Date         = get_header(Headers3, "date"),
+    IncAuth      = get_header(Headers3, "authorization"),
+    {_Schema, _PublicKey, _Sig} = breakout(IncAuth),
+    %% normally you would use the public key to look up the private key
+    PrivateKey  = ?privatekey,
+    Signature = #hmac_signature{method      = Method,
+                                contentmd5  = ContentMD5,
+                                contenttype = ContentType,
+                                date        = Date,
+                                headers     = Headers,
+                                resource    = Path},
+    Signed          = sign_data(PrivateKey, Signature),
+    {_, AuthHeader} = make_HTTPAuth_header(Signed),
+    case AuthHeader of
+        IncAuth -> "match";
+        _       -> "no_match"
+    end.
+
+mochi_authorize_request(Req) ->
     Method      = Req:get(method),
     Path        = Req:get(path),
     Headers     = normalise(mochiweb_headers:to_list(Req:get(headers))),
