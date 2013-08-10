@@ -8,7 +8,7 @@
 -author("Hypernumbers Ltd <gordon@hypernumbers.com>").
 
 fire() ->
-    URL = "http://127.0.0.1:8080/some/page/yeah/",
+    URL = "http://127.0.0.1:14152",
     %% Dates SHOULD conform to Section 3.3 of RFC2616
     %% the examples from the RFC are:
     %% Sun, 06 Nov 1994 08:49:37 GMT  ; RFC 822, updated by RFC 1123
@@ -25,10 +25,12 @@ fire() ->
     %% conversion issues
     Method = post,
     Headers = [{"content-type", "application/json"},
-               {"date", "Sun, 10 Jul 2011 05:07:19"}],
+               {"date",         "Sun, 10 Jul 2011 05:07:19"},
+               {"accept",       "application/json"}],
     ContentType = "application/json",
-    Body = "blah",
-    HTTPAuthHeader = hmac_api_lib:sign(?privatekey, Method, URL,
+    Body = "{'hey': 'ho'}",
+    Path = "/",
+    HTTPAuthHeader = hmac_api_lib:sign(?privatekey, Method, Path,
                                        Headers, ContentType),
-    httpc:request(Method, {URL, [HTTPAuthHeader | Headers],
+    httpc:request(Method, {URL ++ Path, [HTTPAuthHeader | Headers],
                            ContentType, Body}, [], []).
