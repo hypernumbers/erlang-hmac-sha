@@ -98,7 +98,7 @@ sign(PrivateKey, PublicKey, Method, URL, Headers, ContentType) ->
 get_api_keypair() ->
     Public  = mochihex:to_hex(binary_to_list(crypto:strong_rand_bytes(16))),
     Private = mochihex:to_hex(binary_to_list(crypto:strong_rand_bytes(16))),
-    {Public, Private}.
+    {format(Public), format(Private)}.
 
 breakout(Header) ->
     [Schema, Tail] = string:tokens(Header, " "),
@@ -206,6 +206,12 @@ get_header(Headers, Type) ->
         {_K, V} -> V
     end.
 
+format(Key) ->
+    format2(Key, []).
+
+format2([], Acc)                  -> lists:flatten(lists:reverse(Acc));
+format2([A, B, C, D | []], Acc)   -> format2([],   [D, C, B, A | Acc]);
+format2([A, B, C, D | Rest], Acc) -> format2(Rest, ["-", D, C, B, A | Acc]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%                                                                          %%%
