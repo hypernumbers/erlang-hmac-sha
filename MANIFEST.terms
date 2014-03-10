@@ -1,0 +1,45 @@
+%% this is a manifest file for the Stal Erlang Project Index
+% Stal is hosted at http://erlangotp.com
+{stal_conf_version, 1}.
+
+%% Project Details
+%% these are designed to help people find the software they need
+{name, "Erlang HMAC SHA"}.
+{project_version, "1"}.
+{license, "MIT"}.
+{description, "An HMAC SHA library for signing API calls based on the Amazon AWS signed request API library"}.
+{details, "Lets you run signed API calls over http to an Erlang server"}.
+{tags, ["HMAC", "SHA", "api", "Amazon AWS", "request signing", "crypto"]}.
+{status, "production"}. % alpha | beta | production
+
+%% Required contact details
+{url, "http://github.com/hypernumbers/erlang-hmac-sha"}.
+
+%% Optional contact details
+% {irc, ""}. % optional
+{maintainers, [
+               [
+                {name,    "Gordon Guthrie"},
+                {email,   "gordon@hypernumbers.com"},
+                {twitter, "@gordonguthrie"}
+               ]
+              ]}. %optional
+% {project_homepage, ""}. % optional
+
+%% How to include this code in your project
+%% are there other build system that need to be represented?
+%% what about Elixir ones?
+%% or LFe ones?
+%% or Joxa ones?
+{rebar, "*", {, {git, "git://github.com/hypernumbers/erlang-hmac-sha.git","master"}}}.
+% {'erlang.mk', ??}. % Erlang build script
+% {'mix.exs' ??}. % Elixir package manager
+% {'expm', ??}. % Elixir package manager
+{scm, "git clone https://github.com/hypernumbers/erlang-hmac-sha.git"}.
+
+%% Some terms to control usage of this manifest by Stal
+{stal_include, true}.
+{stal_deprecated, false}.
+% {stal_superseded_by, "foo/bar"}. % optional
+
+%% Are there other manifest systems that might want to pull these terms in?
