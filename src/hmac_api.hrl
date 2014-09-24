@@ -13,6 +13,8 @@
 %% defines the date header
 -define(dateheader, "x-amz-date").
 
+-define(AWS_API_CONFIG, [{schema, ?schema}, {header, ?headerprefix}, {date_header, ?dateheader}]).
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%                                                                          %%%
 %%% Default values for defining a generic API                                %%%
@@ -32,12 +34,10 @@
 -define(privatekey, "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o").
 
 
--record(hmac_signature,
-        {
-          method,
-          contentmd5,
-          contenttype,
-          date,
-          headers,
-          resource
-        }).
+-record(hmac_signature, {method,
+                         contentmd5,
+                         contenttype,
+                         date,
+                         headers,
+                         resource
+                        }).

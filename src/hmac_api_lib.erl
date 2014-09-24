@@ -1,7 +1,6 @@
 -module(hmac_api_lib).
 
 -include("hmac_api.hrl").
--include_lib("eunit/include/eunit.hrl").
 
 -ifdef(TEST).
 -compile(export_all).
@@ -26,11 +25,11 @@
 %%% THE AMAZON API MUNGES HOSTNAME AND PATHS IN A CUSTOM WAY
 %%% THIS IMPLEMENTATION DOESN'T
 -export([
-         cowboy_authorize_request/3,
-         mochi_authorize_request/3,
          sign/6,
+         validate/4,
          get_api_keypair/0,
-         breakout/1
+
+         parse_authorization_header/1
         ]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -39,60 +38,10 @@
 %%%                                                                          %%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-cowboy_authorize_request(Req, PublicKey, PrivateKey) ->
-    {Method, _}  = cowboy_req:method(Req),
-    Method2      = list_to_existing_atom(binary_to_list(Method)),
-    {Path, _}    = cowboy_req:path(Req),
-    Path2        = binary_to_list(Path),
-    {Headers, _} = cowboy_req:headers(Req),
-    Headers2     = [{binary_to_list(K), binary_to_list(V)}
-                    || {K, V} <- Headers],
-    Headers3     = normalise(Headers2),
-    ContentMD5   = get_header(Headers3, "content-md5"),
-    ContentType  = get_header(Headers3, "content-type"),
-    Date         = get_header(Headers3, "date"),
-    IncAuth      = get_header(Headers3, "authorization"),
-    Signature = #hmac_signature{method      = Method2,
-                                contentmd5  = ContentMD5,
-                                contenttype = ContentType,
-                                date        = Date,
-                                headers     = Headers3,
-                                resource    = Path2},
-    Signed          = sign_data(PrivateKey, Signature),
-    {_, AuthHeader} = make_HTTPAuth_header(Signed, PublicKey),
-    case AuthHeader of
-        IncAuth -> match;
-        _       -> no_match
-    end.
-
--spec mochi_authorize_request(_Req,
-                              PublicKey ::string(),
-                              PrivateKey :: string()) -> match | no_match.
-mochi_authorize_request(Req, PublicKey, PrivateKey) ->
-    Method      = Req:get(method),
-    Path        = Req:get(path),
-    Headers     = normalise(mochiweb_headers:to_list(Req:get(headers))),
-    ContentMD5  = get_header(Headers, "content-md5"),
-    ContentType = get_header(Headers, "content-type"),
-    Date        = get_header(Headers, "date"),
-    IncAuth     = get_header(Headers, "authorization"),
-    Signature = #hmac_signature{method = Method,
-                                contentmd5 = ContentMD5,
-                                contenttype = ContentType,
-                                date = Date,
-                                headers = Headers,
-                                resource = Path},
-    Signed = sign_data(PrivateKey, Signature),
-    {_, AuthHeader} = make_HTTPAuth_header(Signed, PublicKey),
-    case AuthHeader of
-        IncAuth -> match;
-        _       -> no_match
-    end.
-
 sign(PrivateKey, PublicKey, Method, URL, Headers, ContentType) ->
-    Headers2 = normalise(Headers),
-    ContentMD5 = get_header(Headers2, "content-md5"),
-    Date = get_header(Headers2, "date"),
+    Headers2 = hma_util:normalise(Headers),
+    ContentMD5 = hma_util:get_header(Headers2, "content-md5"),
+    Date = hma_util:get_header(Headers2, "date"),
     Signature = #hmac_signature{method = Method,
                                 contentmd5 = ContentMD5,
                                 contenttype = ContentType,
@@ -102,14 +51,28 @@ sign(PrivateKey, PublicKey, Method, URL, Headers, ContentType) ->
     SignedSig = sign_data(PrivateKey, Signature),
     make_HTTPAuth_header(SignedSig, PublicKey).
 
+-spec validate(PrivateKey :: string(),
+               PublicKey :: string(),
+               Authorization :: string(),
+               Signature :: #hmac_signature{}) -> match | no_match.
+validate(PrivateKey, PublicKey, Authorization, Signature) ->
+    Signed = sign_data(PrivateKey, Signature),
+    {_, AuthHeader} = make_HTTPAuth_header(Signed, PublicKey),
+    case AuthHeader of
+        Authorization ->
+            match;
+        _       ->
+            no_match
+    end.
+
 -spec get_api_keypair() -> {string(), string()}.
 get_api_keypair() ->
     Public  = mochihex:to_hex(binary_to_list(crypto:strong_rand_bytes(16))),
     Private = mochihex:to_hex(binary_to_list(crypto:strong_rand_bytes(16))),
     {format(Public), format(Private)}.
 
--spec breakout(Header :: string()) -> {string(), string(), string()}.
-breakout(Header) ->
+-spec parse_authorization_header(Header :: string()) -> {string(), string(), string()}.
+parse_authorization_header(Header) ->
     [Schema, Tail] = string:tokens(Header, " "),
     [PublicKey, Signature] = string:tokens(Tail, ":"),
     {Schema, PublicKey, Signature}.
@@ -201,19 +164,6 @@ get_date([{K, _V} | T], Date) -> case string:to_lower(K) of
                                      ?dateheader -> [];
                                      _           ->  get_date(T, Date)
                                  end.
-
-normalise(List) -> norm2(List, []).
-
-norm2([], Acc) -> Acc;
-norm2([{K, V} | T], Acc) when is_atom(K) ->
-    norm2(T, [{string:to_lower(atom_to_list(K)), V} | Acc]);
-norm2([H | T], Acc) -> norm2(T, [H | Acc]).
-
-get_header(Headers, Type) ->
-    case lists:keyfind(Type, 1, Headers) of
-        false   -> [];
-        {_K, V} -> V
-    end.
 
 format(Key) ->
     format2(Key, []).
