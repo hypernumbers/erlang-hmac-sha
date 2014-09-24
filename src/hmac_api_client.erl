@@ -30,7 +30,7 @@ fire() ->
     ContentType = "application/json",
     Body = "{'hey': 'ho'}",
     Path = "/",
-    HTTPAuthHeader = hmac_api_lib:sign(?privatekey, Method, Path,
+    HTTPAuthHeader = hmac_api_lib:sign(?privatekey, ?publickey, Method, Path,
                                        Headers, ContentType),
     httpc:request(Method, {URL ++ Path, [HTTPAuthHeader | Headers],
                            ContentType, Body}, [], []).
