@@ -236,6 +236,64 @@ amazon_test1(_) ->
     Expected = "k3nL7gH3+PadhTEVn5Ip83xlYzk=",
     ?assertEqual(Expected, Sig).
 
+roundtrip_test() ->
+    {PublicKey, PrivateKey} = hmac_api_lib:get_api_keypair(),
+    Method = post,
+    Path = "http://example.com/rules",
+    ContentType = "",
+    Date = "Sun, 10 Jul 2011 05:07:19 UTC",
+    Headers = [{"date", Date}],
+
+    {_Name, Authorization} = hmac_api_lib:sign(PrivateKey, PublicKey, Method, Path, Headers,
+                                                ContentType),
+    ?assertEqual(hmac_api_lib:validate(PrivateKey, PublicKey, Authorization,
+                                       #hmac_signature{
+                                          date = Date,
+                                          method = Method,
+                                          headers = Headers,
+                                          resource = Path
+                                         }),
+                 match),
+    ok.
+
+paths_test() ->
+    {PublicKey, PrivateKey} = hmac_api_lib:get_api_keypair(),
+    Method = post,
+    ContentType = "",
+    Date = "Sun, 10 Jul 2011 05:07:19 UTC",
+    Headers = [{"date", Date}],
+
+    BarePath = "/rules",
+    HttpPath = "http://example.com/rules",
+    HttpsPath = "https://example.com/rules",
+
+    {_Name, BareAuthorization} = hmac_api_lib:sign(PrivateKey, PublicKey, Method, BarePath, Headers,
+                                                ContentType),
+    {_Name, HttpAuthorization} = hmac_api_lib:sign(PrivateKey, PublicKey, Method, HttpPath, Headers,
+                                                ContentType),
+    {_Name, HttpsAuthorization} = hmac_api_lib:sign(PrivateKey, PublicKey, Method, HttpsPath, Headers,
+                                                ContentType),
+
+    ?assertEqual(BareAuthorization, HttpAuthorization),
+    ?assertEqual(HttpAuthorization, HttpsAuthorization).
+
+query_test() ->
+    {PublicKey, PrivateKey} = hmac_api_lib:get_api_keypair(),
+    Method = post,
+    ContentType = "",
+    Date = "Sun, 10 Jul 2011 05:07:19 UTC",
+    Headers = [{"date", Date}],
+
+    FooBar = "http://example.com/rules?foo=bar&baz=hello",
+    BarFoo = "http://example.com/rules?baz=hello&foo=bar",
+
+    {_Name, FooBarAuthorization} = hmac_api_lib:sign(PrivateKey, PublicKey, Method,
+                                                     FooBar, Headers, ContentType),
+    {_Name, BarFooAuthorization} = hmac_api_lib:sign(PrivateKey, PublicKey, Method,
+                                                     BarFoo, Headers, ContentType),
+
+    ?assertEqual(FooBarAuthorization, BarFooAuthorization).
+
 unit_test_() ->
     Setup   = fun() -> ok end,
     Cleanup = fun(_) -> ok end,

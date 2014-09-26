@@ -2,6 +2,7 @@
 
 -include("hmac_api.hrl").
 
+-include_lib("eunit/include/eunit.hrl").
 -ifdef(TEST).
 -compile(export_all).
 -endif.
