@@ -5,9 +5,11 @@
         ]).
 
 -include("hmac_api.hrl").
+
 -author("Hypernumbers Ltd <gordon@hypernumbers.com>").
 
 fire() ->
+    {PublicKey, PrivateKey} = hmac_api_lib:get_api_keypair(),
     URL = "http://127.0.0.1:14152",
     %% Dates SHOULD conform to Section 3.3 of RFC2616
     %% the examples from the RFC are:
@@ -30,7 +32,7 @@ fire() ->
     ContentType = "application/json",
     Body = "{'hey': 'ho'}",
     Path = "/",
-    HTTPAuthHeader = hmac_api_lib:sign(?privatekey, ?publickey, Method, Path,
+    HTTPAuthHeader = hmac_api_lib:sign(PrivateKey, PublicKey, Method, Path,
                                        Headers, ContentType),
     httpc:request(Method, {URL ++ Path, [HTTPAuthHeader | Headers],
                            ContentType, Body}, [], []).

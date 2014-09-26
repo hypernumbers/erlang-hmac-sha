@@ -1,7 +1,10 @@
 -module(hmac_api_lib).
 
 -include("hmac_api.hrl").
--include_lib("eunit/include/eunit.hrl").
+
+-ifdef(TEST).
+-compile(export_all).
+-endif.
 
 -author("Hypernumbers Ltd <gordon@hypernumbers.com>").
 
@@ -22,11 +25,14 @@
 %%% THE AMAZON API MUNGES HOSTNAME AND PATHS IN A CUSTOM WAY
 %%% THIS IMPLEMENTATION DOESN'T
 -export([
-         cowboy_authorize_request/3,
-         mochi_authorize_request/3,
          sign/6,
+
+         sign/7,
+         validate/4,
+
          get_api_keypair/0,
-         breakout/1
+
+         parse_authorization_header/1
         ]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -35,72 +41,44 @@
 %%%                                                                          %%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-cowboy_authorize_request(Req, PublicKey, PrivateKey) ->
-    {Method, _}  = cowboy_req:method(Req),
-    Method2      = list_to_existing_atom(binary_to_list(Method)),
-    {Path, _}    = cowboy_req:path(Req),
-    Path2        = binary_to_list(Path),
-    {Headers, _} = cowboy_req:headers(Req),
-    Headers2     = [{binary_to_list(K), binary_to_list(V)}
-                    || {K, V} <- Headers],
-    Headers3     = normalise(Headers2),
-    ContentMD5   = get_header(Headers3, "content-md5"),
-    ContentType  = get_header(Headers3, "content-type"),
-    Date         = get_header(Headers3, "date"),
-    IncAuth      = get_header(Headers3, "authorization"),
-    Signature = #hmac_signature{method      = Method2,
-                                contentmd5  = ContentMD5,
-                                contenttype = ContentType,
-                                date        = Date,
-                                headers     = Headers3,
-                                resource    = Path2},
-    Signed          = sign_data(PrivateKey, Signature),
-    {_, AuthHeader} = make_HTTPAuth_header(Signed, PublicKey),
-    case AuthHeader of
-        IncAuth -> "match";
-        _       -> "no_match"
-    end.
-
-mochi_authorize_request(Req, PublicKey, PrivateKey) ->
-    Method      = Req:get(method),
-    Path        = Req:get(path),
-    Headers     = normalise(mochiweb_headers:to_list(Req:get(headers))),
-    ContentMD5  = get_header(Headers, "content-md5"),
-    ContentType = get_header(Headers, "content-type"),
-    Date        = get_header(Headers, "date"),
-    IncAuth     = get_header(Headers, "authorization"),
-    Signature = #hmac_signature{method = Method,
-                                contentmd5 = ContentMD5,
-                                contenttype = ContentType,
-                                date = Date,
-                                headers = Headers,
-                                resource = Path},
-    Signed = sign_data(PrivateKey, Signature),
-    {_, AuthHeader} = make_HTTPAuth_header(Signed, PublicKey),
-    case AuthHeader of
-        IncAuth -> "match";
-        _       -> "no_match"
-    end.
-
 sign(PrivateKey, PublicKey, Method, URL, Headers, ContentType) ->
-    Headers2 = normalise(Headers),
-    ContentMD5 = get_header(Headers2, "content-md5"),
-    Date = get_header(Headers2, "date"),
-    Signature = #hmac_signature{method = Method,
+    sign(#hmac_config{}, PrivateKey, PublicKey, Method, URL, Headers, ContentType).
+sign(#hmac_config{schema = Schema} = Config, PrivateKey, PublicKey, Method, URL, Headers, ContentType) ->
+    Headers2 = hma_util:normalise(Headers),
+    ContentMD5 = hma_util:get_header(Headers2, "content-md5"),
+    Date = hma_util:get_header(Headers2, "date"),
+    Signature = #hmac_signature{config = Config,
+                                method = Method,
                                 contentmd5 = ContentMD5,
                                 contenttype = ContentType,
                                 date = Date,
                                 headers = Headers,
                                 resource = URL},
     SignedSig = sign_data(PrivateKey, Signature),
-    make_HTTPAuth_header(SignedSig, PublicKey).
+    make_HTTPAuth_header(Schema, SignedSig, PublicKey).
 
+-spec validate(PrivateKey :: string(),
+               PublicKey :: string(),
+               Authorization :: string(),
+               Signature :: #hmac_signature{}) -> match | no_match.
+validate(PrivateKey, PublicKey, Authorization, #hmac_signature{config = #hmac_config{schema = Schema}} = Signature) ->
+    Signed = sign_data(PrivateKey, Signature),
+    {_, AuthHeader} = make_HTTPAuth_header(Schema, Signed, PublicKey),
+    case AuthHeader of
+        Authorization ->
+            match;
+        _       ->
+            no_match
+    end.
+
+-spec get_api_keypair() -> {string(), string()}.
 get_api_keypair() ->
     Public  = mochihex:to_hex(binary_to_list(crypto:strong_rand_bytes(16))),
     Private = mochihex:to_hex(binary_to_list(crypto:strong_rand_bytes(16))),
     {format(Public), format(Private)}.
 
-breakout(Header) ->
+-spec parse_authorization_header(Header :: string()) -> {string(), string(), string()}.
+parse_authorization_header(Header) ->
     [Schema, Tail] = string:tokens(Header, " "),
     [PublicKey, Signature] = string:tokens(Tail, ":"),
     {Schema, PublicKey, Signature}.
@@ -111,40 +89,45 @@ breakout(Header) ->
 %%%                                                                          %%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-make_HTTPAuth_header(Signature, PublicKey) ->
-    {"Authorization", ?schema ++ " "
+make_HTTPAuth_header(Schema, Signature, PublicKey) ->
+    {"Authorization", Schema ++ " "
      ++ PublicKey ++ ":" ++ Signature}.
 
-make_signature_string(#hmac_signature{} = S) ->
-    Date = get_date(S#hmac_signature.headers, S#hmac_signature.date),
-    string:to_upper(atom_to_list(S#hmac_signature.method)) ++ "\n"
-        ++ S#hmac_signature.contentmd5 ++ "\n"
-        ++ S#hmac_signature.contenttype ++ "\n"
-        ++ Date ++ "\n"
-        ++ canonicalise_headers(S#hmac_signature.headers)
-        ++ canonicalise_resource(S#hmac_signature.resource).
+make_signature_string(#hmac_signature{config = Config,
+                                      contentmd5 = ContentMD5, contenttype = ContentType,
+                                      date = Date, headers = Headers,
+                                      method = Method, resource = Resource}) ->
+    Date1 = get_date(Config, Headers, Date),
+    string:to_upper(atom_to_list(Method)) ++ "\n"
+        ++ ContentMD5 ++ "\n"
+        ++ ContentType ++ "\n"
+        ++ Date1 ++ "\n"
+        ++ canonicalise_headers(Config, Headers)
+        ++ canonicalise_resource(Resource).
 
 sign_data(PrivateKey, #hmac_signature{} = Signature) ->
     Str = make_signature_string(Signature),
-    sign2(PrivateKey, Str).
-
-%% this fn is the entry point for a unit test which is why it is broken out...
-%% if yer encryption and utf8 and base45 doo-dahs don't work then
-%% yer Donald is well and truly Ducked so ye may as weel test it...
-sign2(PrivateKey, Str) ->
+    sign_data(PrivateKey, Str);
+sign_data(PrivateKey, Str) when is_list(Str) ->
     Sign = xmerl_ucs:to_utf8(Str),
     binary_to_list(base64:encode(crypto:hmac(sha, PrivateKey, Sign))).
 
-canonicalise_headers([]) -> "\n";
-canonicalise_headers(List) when is_list(List) ->
+canonicalise_headers(_Config, []) -> "\n";
+canonicalise_headers(Config, List) when is_list(List) ->
     List2 = [{string:to_lower(K), V} || {K, V} <- lists:sort(List)],
-    c_headers2(consolidate(List2, []), []).
+    c_headers2(Config, consolidate(List2, []), []).
 
-c_headers2([], Acc)       -> string:join(Acc, "\n") ++ "\n";
-c_headers2([{?headerprefix ++ Rest, Key} | T], Acc) ->
-    Hd = string:strip(?headerprefix ++ Rest) ++ ":" ++ string:strip(Key),
-    c_headers2(T, [Hd | Acc]);
-c_headers2([_H | T], Acc) -> c_headers2(T, Acc).
+c_headers2(_Config, [], Acc) ->
+    string:join(Acc, "\n") ++ "\n";
+c_headers2(#hmac_config{header_prefix = HeaderPrefix} = Config,
+           [{Header, Key} | T], Acc) ->
+    case lists:prefix(HeaderPrefix, Header) of
+        true ->
+            Hd = string:strip(Header) ++ ":" ++ string:strip(Key),
+            c_headers2(Config, T, [Hd | Acc]);
+        false ->
+            c_headers2(Config, T, Acc)
+    end.
 
 consolidate([H | []], Acc) -> [H | Acc];
 consolidate([{H, K1}, {H, K2} | Rest], Acc) ->
@@ -187,23 +170,14 @@ canonicalise_query(List) ->
     string:join(lists:sort(List2), "&").
 
 %% if there's a header date take it and ditch the date
-get_date([], Date)            -> Date;
-get_date([{K, _V} | T], Date) -> case string:to_lower(K) of
-                                     ?dateheader -> [];
-                                     _           ->  get_date(T, Date)
-                                 end.
-
-normalise(List) -> norm2(List, []).
-
-norm2([], Acc) -> Acc;
-norm2([{K, V} | T], Acc) when is_atom(K) ->
-    norm2(T, [{string:to_lower(atom_to_list(K)), V} | Acc]);
-norm2([H | T], Acc) -> norm2(T, [H | Acc]).
-
-get_header(Headers, Type) ->
-    case lists:keyfind(Type, 1, Headers) of
-        false   -> [];
-        {_K, V} -> V
+get_date(_Config, [], Date) ->
+    Date;
+get_date(#hmac_config{date_header = DateHeader} = Config, [{K, _V} | T], Date) ->
+    case string:to_lower(K) of
+        DateHeader ->
+            [];
+        _ ->
+            get_date(Config, T, Date)
     end.
 
 format(Key) ->
@@ -212,254 +186,3 @@ format(Key) ->
 format2([], Acc)                  -> lists:flatten(lists:reverse(Acc));
 format2([A, B, C, D | []], Acc)   -> format2([],   [D, C, B, A | Acc]);
 format2([A, B, C, D | Rest], Acc) -> format2(Rest, ["-", D, C, B, A | Acc]).
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%                                                                          %%%
-%%% Unit Tests                                                               %%%
-%%%                                                                          %%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-                                                % taken from Amazon docs
-%% http://docs.amazonwebservices.com/AmazonS3/latest/dev/index.html?RESTAuthentication.html
-hash_test1(_) ->
-    Sig = "DELETE\n\n\n\nx-amz-date:Tue, 27 Mar 2007 21:20:26 +0000\n/johnsmith/photos/puppy.jpg",
-    Key = ?privatekey,
-    Hash = sign2(Key, Sig),
-    Expected = "k3nL7gH3+PadhTEVn5Ip83xlYzk=",
-    ?assertEqual(Expected, Hash).
-
-%% taken from Amazon docs
-%% http://docs.amazonwebservices.com/AmazonS3/latest/dev/index.html?RESTAuthentication.html
-hash_test2(_) ->
-    Sig = "GET\n\n\nTue, 27 Mar 2007 19:44:46 +0000\n/johnsmith/?acl",
-    Key = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
-    Hash = sign2(Key, Sig),
-    Expected = "thdUi9VAkzhkniLj96JIrOPGi0g=",
-    ?assertEqual(Expected, Hash).
-
-%% taken from Amazon docs
-%% http://docs.amazonwebservices.com/AmazonS3/latest/dev/index.html?RESTAuthentication.html
-hash_test3(_) ->
-    Sig = "GET\n\n\nWed, 28 Mar 2007 01:49:49 +0000\n/dictionary/"
-        ++ "fran%C3%A7ais/pr%c3%a9f%c3%a8re",
-    Key = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
-    Hash = sign2(Key, Sig),
-    Expected = "dxhSBHoI6eVSPcXJqEghlUzZMnY=",
-    ?assertEqual(Expected, Hash).
-
-signature_test1(_) ->
-    URL = "http://example.com:90/tongs/ya/bas",
-    Method = post,
-    ContentMD5 = "",
-    ContentType = "",
-    Date = "Sun, 10 Jul 2011 05:07:19 UTC",
-    Headers = [],
-    Signature = #hmac_signature{method = Method,
-                                contentmd5 = ContentMD5,
-                                contenttype = ContentType,
-                                date = Date,
-                                headers = Headers,
-                                resource = URL},
-    Sig = make_signature_string(Signature),
-    Expected = "POST\n\n\nSun, 10 Jul 2011 05:07:19 UTC\n\n/tongs/ya/bas",
-    ?assertEqual(Expected, Sig).
-
-signature_test2(_) ->
-    URL = "http://example.com:90/tongs/ya/bas",
-    Method = get,
-    ContentMD5 = "",
-    ContentType = "",
-    Date = "Sun, 10 Jul 2011 05:07:19 UTC",
-    Headers = [{"x-amz-acl", "public-read"}],
-    Signature = #hmac_signature{method = Method,
-                                contentmd5 = ContentMD5,
-                                contenttype = ContentType,
-                                date = Date,
-                                headers = Headers,
-                                resource = URL},
-    Sig = make_signature_string(Signature),
-    Expected = "GET\n\n\nSun, 10 Jul 2011 05:07:19 UTC\nx-amz-acl:public-read\n/tongs/ya/bas",
-    ?assertEqual(Expected, Sig).
-
-signature_test3(_) ->
-    URL = "http://example.com:90/tongs/ya/bas",
-    Method = get,
-    ContentMD5 = "",
-    ContentType = "",
-    Date = "Sun, 10 Jul 2011 05:07:19 UTC",
-    Headers = [{"x-amz-acl", "public-read"},
-               {"yantze", "blast-off"},
-               {"x-amz-doobie", "bongwater"},
-               {"x-amz-acl", "public-write"}],
-    Signature = #hmac_signature{method = Method,
-                                contentmd5 = ContentMD5,
-                                contenttype = ContentType,
-                                date = Date,
-                                headers = Headers,
-                                resource = URL},
-    Sig = make_signature_string(Signature),
-    Expected = "GET\n\n\nSun, 10 Jul 2011 05:07:19 UTC\nx-amz-acl:public-read;public-write\nx-amz-doobie:bongwater\n/tongs/ya/bas",
-    ?assertEqual(Expected, Sig).
-
-signature_test4(_) ->
-    URL = "http://example.com:90/tongs/ya/bas",
-    Method = get,
-    ContentMD5 = "",
-    ContentType = "",
-    Date = "Sun, 10 Jul 2011 05:07:19 UTC",
-    Headers = [{"x-amz-acl", "public-read"},
-               {"yantze", "blast-off"},
-               {"x-amz-doobie  oobie \t boobie ", "bongwater"},
-               {"x-amz-acl", "public-write"}],
-    Signature = #hmac_signature{method = Method,
-                                contentmd5 = ContentMD5,
-                                contenttype = ContentType,
-                                date = Date,
-                                headers = Headers,
-                                resource = URL},
-    Sig = make_signature_string(Signature),
-    Expected = "GET\n\n\nSun, 10 Jul 2011 05:07:19 UTC\nx-amz-acl:public-read;public-write\nx-amz-doobie oobie boobie:bongwater\n/tongs/ya/bas",
-    ?assertEqual(Expected, Sig).
-
-signature_test5(_) ->
-    URL = "http://example.com:90/tongs/ya/bas",
-    Method = get,
-    ContentMD5 = "",
-    ContentType = "",
-    Date = "Sun, 10 Jul 2011 05:07:19 UTC",
-    Headers = [{"x-amz-acl", "public-Read"},
-               {"yantze", "Blast-Off"},
-               {"x-amz-doobie  Oobie \t boobie ", "bongwater"},
-               {"x-amz-acl", "public-write"}],
-    Signature = #hmac_signature{method = Method,
-                                contentmd5 = ContentMD5,
-                                contenttype = ContentType,
-                                date = Date,
-                                headers = Headers,
-                                resource = URL},
-    Sig = make_signature_string(Signature),
-    Expected = "GET\n\n\nSun, 10 Jul 2011 05:07:19 UTC\nx-amz-acl:public-Read;public-write\nx-amz-doobie oobie boobie:bongwater\n/tongs/ya/bas",
-    ?assertEqual(Expected, Sig).
-
-signature_test6(_) ->
-    URL = "http://example.com:90/tongs/ya/bas/?andy&zbish=bash&bosh=burp",
-    Method = get,
-    ContentMD5 = "",
-    ContentType = "",
-    Date = "Sun, 10 Jul 2011 05:07:19 UTC",
-    Headers = [],
-    Signature = #hmac_signature{method = Method,
-                                contentmd5 = ContentMD5,
-                                contenttype = ContentType,
-                                date = Date,
-                                headers = Headers,
-                                resource = URL},
-    Sig = make_signature_string(Signature),
-    Expected = "GET\n\n\nSun, 10 Jul 2011 05:07:19 UTC\n\n"
-        ++ "/tongs/ya/bas/?andy&bosh=burp&zbish=bash",
-    ?assertEqual(Expected, Sig).
-
-signature_test7(_) ->
-    URL = "http://exAMPLE.Com:90/tONgs/ya/bas/?ANdy&ZBish=Bash&bOsh=burp",
-    Method = get,
-    ContentMD5 = "",
-    ContentType = "",
-    Date = "Sun, 10 Jul 2011 05:07:19 UTC",
-    Headers = [],
-    Signature = #hmac_signature{method = Method,
-                                contentmd5 = ContentMD5,
-                                contenttype = ContentType,
-                                date = Date,
-                                headers = Headers,
-                                resource = URL},
-    Sig = make_signature_string(Signature),
-    Expected = "GET\n\n\nSun, 10 Jul 2011 05:07:19 UTC\n\n"
-        ++"/tongs/ya/bas/?andy&bosh=burp&zbish=bash",
-    ?assertEqual(Expected, Sig).
-
-signature_test8(_) ->
-    URL = "http://exAMPLE.Com:90/tONgs/ya/bas/?ANdy&ZBish=Bash&bOsh=burp",
-    Method = get,
-    ContentMD5 = "",
-    ContentType = "",
-    Date = "",
-    Headers = [{"x-aMz-daTe", "Tue, 27 Mar 2007 21:20:26 +0000"}],
-    Signature = #hmac_signature{method = Method,
-                                contentmd5 = ContentMD5,
-                                contenttype = ContentType,
-                                date = Date,
-                                headers = Headers,
-                                resource = URL},
-    Sig = make_signature_string(Signature),
-    Expected = "GET\n\n\n\n"
-        ++"x-amz-date:Tue, 27 Mar 2007 21:20:26 +0000\n"
-        ++"/tongs/ya/bas/?andy&bosh=burp&zbish=bash",
-    ?assertEqual(Expected, Sig).
-
-signature_test9(_) ->
-    URL = "http://exAMPLE.Com:90/tONgs/ya/bas/?ANdy&ZBish=Bash&bOsh=burp",
-    Method = get,
-    ContentMD5 = "",
-    ContentType = "",
-    Date = "Sun, 10 Jul 2011 05:07:19 UTC",
-    Headers = [{"x-amz-date", "Tue, 27 Mar 2007 21:20:26 +0000"}],
-    Signature = #hmac_signature{method = Method,
-                                contentmd5 = ContentMD5,
-                                contenttype = ContentType,
-                                date = Date,
-                                headers = Headers,
-                                resource = URL},
-    Sig = make_signature_string(Signature),
-    Expected = "GET\n\n\n\n"
-        ++"x-amz-date:Tue, 27 Mar 2007 21:20:26 +0000\n"
-        ++"/tongs/ya/bas/?andy&bosh=burp&zbish=bash",
-    ?assertEqual(Expected, Sig).
-
-amazon_test1(_) ->
-    URL = "http://exAMPLE.Com:90/johnsmith/photos/puppy.jpg",
-    Method = delete,
-    ContentMD5 = "",
-    ContentType = "",
-    Date = "",
-    Headers = [{"x-amz-date", "Tue, 27 Mar 2007 21:20:26 +0000"}],
-    Signature = #hmac_signature{method = Method,
-                                contentmd5 = ContentMD5,
-                                contenttype = ContentType,
-                                date = Date,
-                                headers = Headers,
-                                resource = URL},
-    Sig = sign_data(?privatekey, Signature),
-    Expected = "k3nL7gH3+PadhTEVn5Ip83xlYzk=",
-    ?assertEqual(Expected, Sig).
-
-unit_test_() ->
-    Setup   = fun() -> ok end,
-    Cleanup = fun(_) -> ok end,
-
-    Series1 = [
-               fun hash_test1/1,
-               fun hash_test2/1,
-               fun hash_test3/1
-              ],
-
-    Series2 = [
-               fun signature_test1/1,
-               fun signature_test2/1,
-               fun signature_test3/1,
-               fun signature_test4/1,
-               fun signature_test5/1,
-               fun signature_test6/1,
-               fun signature_test7/1,
-               fun signature_test8/1,
-               fun signature_test9/1
-              ],
-
-    Series3 = [
-               fun amazon_test1/1
-              ],
-
-    {setup, Setup, Cleanup, [
-                             {with, [], Series1},
-                             {with, [], Series2},
-                             {with, [], Series3}
-                            ]}.
