@@ -6,12 +6,18 @@
 -author("Hypernumbers Ltd <gordon@hypernumbers.com>").
 
 
-                                                % taken from Amazon docs
+%% these are taken from the document
+%% % http://docs.amazonwebservices.com/AmazonS3/latest/dev/index.html?RESTAuthentication.html
+%% they are not valid keys!
+-define(PUBLICKEY,  "0PN5J17HBGZHT7JJ3X82").
+-define(PRIVATEKEY, "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o").
+
+%% these are taken from the document
 %% http://docs.amazonwebservices.com/AmazonS3/latest/dev/index.html?RESTAuthentication.html
 hash_test1(_) ->
     Sig = "DELETE\n\n\n\nx-amz-date:Tue, 27 Mar 2007 21:20:26 +0000\n/johnsmith/photos/puppy.jpg",
-    Key = ?privatekey,
-    Hash = hmac_api_lib:sign2(Key, Sig),
+    Key = ?PRIVATEKEY,
+    Hash = hmac_api_lib:sign_data(Key, Sig),
     Expected = "k3nL7gH3+PadhTEVn5Ip83xlYzk=",
     ?assertEqual(Expected, Hash).
 
@@ -20,7 +26,7 @@ hash_test1(_) ->
 hash_test2(_) ->
     Sig = "GET\n\n\nTue, 27 Mar 2007 19:44:46 +0000\n/johnsmith/?acl",
     Key = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
-    Hash = hmac_api_lib:sign2(Key, Sig),
+    Hash = hmac_api_lib:sign_data(Key, Sig),
     Expected = "thdUi9VAkzhkniLj96JIrOPGi0g=",
     ?assertEqual(Expected, Hash).
 
@@ -30,7 +36,7 @@ hash_test3(_) ->
     Sig = "GET\n\n\nWed, 28 Mar 2007 01:49:49 +0000\n/dictionary/"
         ++ "fran%C3%A7ais/pr%c3%a9f%c3%a8re",
     Key = "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o",
-    Hash = hmac_api_lib:sign2(Key, Sig),
+    Hash = hmac_api_lib:sign_data(Key, Sig),
     Expected = "dxhSBHoI6eVSPcXJqEghlUzZMnY=",
     ?assertEqual(Expected, Hash).
 
@@ -41,7 +47,9 @@ signature_test1(_) ->
     ContentType = "",
     Date = "Sun, 10 Jul 2011 05:07:19 UTC",
     Headers = [],
-    Signature = #hmac_signature{method = Method,
+
+    Signature = #hmac_signature{config = hmac_aws:config(),
+                                method = Method,
                                 contentmd5 = ContentMD5,
                                 contenttype = ContentType,
                                 date = Date,
@@ -58,7 +66,8 @@ signature_test2(_) ->
     ContentType = "",
     Date = "Sun, 10 Jul 2011 05:07:19 UTC",
     Headers = [{"x-amz-acl", "public-read"}],
-    Signature = #hmac_signature{method = Method,
+    Signature = #hmac_signature{config = hmac_aws:config(),
+                                method = Method,
                                 contentmd5 = ContentMD5,
                                 contenttype = ContentType,
                                 date = Date,
@@ -78,7 +87,8 @@ signature_test3(_) ->
                {"yantze", "blast-off"},
                {"x-amz-doobie", "bongwater"},
                {"x-amz-acl", "public-write"}],
-    Signature = #hmac_signature{method = Method,
+    Signature = #hmac_signature{config = hmac_aws:config(),
+                                method = Method,
                                 contentmd5 = ContentMD5,
                                 contenttype = ContentType,
                                 date = Date,
@@ -98,7 +108,8 @@ signature_test4(_) ->
                {"yantze", "blast-off"},
                {"x-amz-doobie  oobie \t boobie ", "bongwater"},
                {"x-amz-acl", "public-write"}],
-    Signature = #hmac_signature{method = Method,
+    Signature = #hmac_signature{config = hmac_aws:config(),
+                                method = Method,
                                 contentmd5 = ContentMD5,
                                 contenttype = ContentType,
                                 date = Date,
@@ -118,7 +129,8 @@ signature_test5(_) ->
                {"yantze", "Blast-Off"},
                {"x-amz-doobie  Oobie \t boobie ", "bongwater"},
                {"x-amz-acl", "public-write"}],
-    Signature = #hmac_signature{method = Method,
+    Signature = #hmac_signature{config = hmac_aws:config(),
+                                method = Method,
                                 contentmd5 = ContentMD5,
                                 contenttype = ContentType,
                                 date = Date,
@@ -135,7 +147,8 @@ signature_test6(_) ->
     ContentType = "",
     Date = "Sun, 10 Jul 2011 05:07:19 UTC",
     Headers = [],
-    Signature = #hmac_signature{method = Method,
+    Signature = #hmac_signature{config = hmac_aws:config(),
+                                method = Method,
                                 contentmd5 = ContentMD5,
                                 contenttype = ContentType,
                                 date = Date,
@@ -153,7 +166,8 @@ signature_test7(_) ->
     ContentType = "",
     Date = "Sun, 10 Jul 2011 05:07:19 UTC",
     Headers = [],
-    Signature = #hmac_signature{method = Method,
+    Signature = #hmac_signature{config = hmac_aws:config(),
+                                method = Method,
                                 contentmd5 = ContentMD5,
                                 contenttype = ContentType,
                                 date = Date,
@@ -171,7 +185,8 @@ signature_test8(_) ->
     ContentType = "",
     Date = "",
     Headers = [{"x-aMz-daTe", "Tue, 27 Mar 2007 21:20:26 +0000"}],
-    Signature = #hmac_signature{method = Method,
+    Signature = #hmac_signature{config = hmac_aws:config(),
+                                method = Method,
                                 contentmd5 = ContentMD5,
                                 contenttype = ContentType,
                                 date = Date,
@@ -190,7 +205,8 @@ signature_test9(_) ->
     ContentType = "",
     Date = "Sun, 10 Jul 2011 05:07:19 UTC",
     Headers = [{"x-amz-date", "Tue, 27 Mar 2007 21:20:26 +0000"}],
-    Signature = #hmac_signature{method = Method,
+    Signature = #hmac_signature{config = hmac_aws:config(),
+                                method = Method,
                                 contentmd5 = ContentMD5,
                                 contenttype = ContentType,
                                 date = Date,
@@ -209,13 +225,14 @@ amazon_test1(_) ->
     ContentType = "",
     Date = "",
     Headers = [{"x-amz-date", "Tue, 27 Mar 2007 21:20:26 +0000"}],
-    Signature = #hmac_signature{method = Method,
+    Signature = #hmac_signature{config=hmac_aws:config(),
+                                method = Method,
                                 contentmd5 = ContentMD5,
                                 contenttype = ContentType,
                                 date = Date,
                                 headers = Headers,
                                 resource = URL},
-    Sig = hmac_api_lib:sign_data(?privatekey, Signature),
+    Sig = hmac_api_lib:sign_data(?PRIVATEKEY, Signature),
     Expected = "k3nL7gH3+PadhTEVn5Ip83xlYzk=",
     ?assertEqual(Expected, Sig).
 

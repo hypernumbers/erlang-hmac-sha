@@ -26,7 +26,10 @@
 %%% THIS IMPLEMENTATION DOESN'T
 -export([
          sign/6,
+
+         sign/7,
          validate/4,
+
          get_api_keypair/0,
 
          parse_authorization_header/1
@@ -39,25 +42,28 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 sign(PrivateKey, PublicKey, Method, URL, Headers, ContentType) ->
+    sign(#hmac_config{}, PrivateKey, PublicKey, Method, URL, Headers, ContentType).
+sign(#hmac_config{schema = Schema} = Config, PrivateKey, PublicKey, Method, URL, Headers, ContentType) ->
     Headers2 = hma_util:normalise(Headers),
     ContentMD5 = hma_util:get_header(Headers2, "content-md5"),
     Date = hma_util:get_header(Headers2, "date"),
-    Signature = #hmac_signature{method = Method,
+    Signature = #hmac_signature{config = Config,
+                                method = Method,
                                 contentmd5 = ContentMD5,
                                 contenttype = ContentType,
                                 date = Date,
                                 headers = Headers,
                                 resource = URL},
     SignedSig = sign_data(PrivateKey, Signature),
-    make_HTTPAuth_header(SignedSig, PublicKey).
+    make_HTTPAuth_header(Schema, SignedSig, PublicKey).
 
 -spec validate(PrivateKey :: string(),
                PublicKey :: string(),
                Authorization :: string(),
                Signature :: #hmac_signature{}) -> match | no_match.
-validate(PrivateKey, PublicKey, Authorization, Signature) ->
+validate(PrivateKey, PublicKey, Authorization, #hmac_signature{config = #hmac_config{schema = Schema}} = Signature) ->
     Signed = sign_data(PrivateKey, Signature),
-    {_, AuthHeader} = make_HTTPAuth_header(Signed, PublicKey),
+    {_, AuthHeader} = make_HTTPAuth_header(Schema, Signed, PublicKey),
     case AuthHeader of
         Authorization ->
             match;
@@ -83,40 +89,45 @@ parse_authorization_header(Header) ->
 %%%                                                                          %%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-make_HTTPAuth_header(Signature, PublicKey) ->
-    {"Authorization", ?schema ++ " "
+make_HTTPAuth_header(Schema, Signature, PublicKey) ->
+    {"Authorization", Schema ++ " "
      ++ PublicKey ++ ":" ++ Signature}.
 
-make_signature_string(#hmac_signature{} = S) ->
-    Date = get_date(S#hmac_signature.headers, S#hmac_signature.date),
-    string:to_upper(atom_to_list(S#hmac_signature.method)) ++ "\n"
-        ++ S#hmac_signature.contentmd5 ++ "\n"
-        ++ S#hmac_signature.contenttype ++ "\n"
-        ++ Date ++ "\n"
-        ++ canonicalise_headers(S#hmac_signature.headers)
-        ++ canonicalise_resource(S#hmac_signature.resource).
+make_signature_string(#hmac_signature{config = Config,
+                                      contentmd5 = ContentMD5, contenttype = ContentType,
+                                      date = Date, headers = Headers,
+                                      method = Method, resource = Resource}) ->
+    Date1 = get_date(Config, Headers, Date),
+    string:to_upper(atom_to_list(Method)) ++ "\n"
+        ++ ContentMD5 ++ "\n"
+        ++ ContentType ++ "\n"
+        ++ Date1 ++ "\n"
+        ++ canonicalise_headers(Config, Headers)
+        ++ canonicalise_resource(Resource).
 
 sign_data(PrivateKey, #hmac_signature{} = Signature) ->
     Str = make_signature_string(Signature),
-    sign2(PrivateKey, Str).
-
-%% this fn is the entry point for a unit test which is why it is broken out...
-%% if yer encryption and utf8 and base45 doo-dahs don't work then
-%% yer Donald is well and truly Ducked so ye may as weel test it...
-sign2(PrivateKey, Str) ->
+    sign_data(PrivateKey, Str);
+sign_data(PrivateKey, Str) when is_list(Str) ->
     Sign = xmerl_ucs:to_utf8(Str),
     binary_to_list(base64:encode(crypto:hmac(sha, PrivateKey, Sign))).
 
-canonicalise_headers([]) -> "\n";
-canonicalise_headers(List) when is_list(List) ->
+canonicalise_headers(_Config, []) -> "\n";
+canonicalise_headers(Config, List) when is_list(List) ->
     List2 = [{string:to_lower(K), V} || {K, V} <- lists:sort(List)],
-    c_headers2(consolidate(List2, []), []).
+    c_headers2(Config, consolidate(List2, []), []).
 
-c_headers2([], Acc)       -> string:join(Acc, "\n") ++ "\n";
-c_headers2([{?headerprefix ++ Rest, Key} | T], Acc) ->
-    Hd = string:strip(?headerprefix ++ Rest) ++ ":" ++ string:strip(Key),
-    c_headers2(T, [Hd | Acc]);
-c_headers2([_H | T], Acc) -> c_headers2(T, Acc).
+c_headers2(_Config, [], Acc) ->
+    string:join(Acc, "\n") ++ "\n";
+c_headers2(#hmac_config{header_prefix = HeaderPrefix} = Config,
+           [{Header, Key} | T], Acc) ->
+    case lists:prefix(HeaderPrefix, Header) of
+        true ->
+            Hd = string:strip(Header) ++ ":" ++ string:strip(Key),
+            c_headers2(Config, T, [Hd | Acc]);
+        false ->
+            c_headers2(Config, T, Acc)
+    end.
 
 consolidate([H | []], Acc) -> [H | Acc];
 consolidate([{H, K1}, {H, K2} | Rest], Acc) ->
@@ -159,11 +170,15 @@ canonicalise_query(List) ->
     string:join(lists:sort(List2), "&").
 
 %% if there's a header date take it and ditch the date
-get_date([], Date)            -> Date;
-get_date([{K, _V} | T], Date) -> case string:to_lower(K) of
-                                     ?dateheader -> [];
-                                     _           ->  get_date(T, Date)
-                                 end.
+get_date(_Config, [], Date) ->
+    Date;
+get_date(#hmac_config{date_header = DateHeader} = Config, [{K, _V} | T], Date) ->
+    case string:to_lower(K) of
+        DateHeader ->
+            [];
+        _ ->
+            get_date(Config, T, Date)
+    end.
 
 format(Key) ->
     format2(Key, []).
