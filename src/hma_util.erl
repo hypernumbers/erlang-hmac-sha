@@ -8,7 +8,7 @@
 
 get_header(Headers, Type) ->
     case lists:keyfind(Type, 1, Headers) of
-        false   -> [];
+        false   -> "";
         {_K, V} -> V
     end.
 

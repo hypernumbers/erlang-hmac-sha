@@ -9,23 +9,11 @@
                      }
        ).
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%                                                                          %%%
-%%% Default values for defining a generic API                                %%%
-%%%                                                                          %%%
-%%% Only change these if you alter the canonicalisation                      %%%
-%%%                                                                          %%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%-define(schema, "MOCHIAPI").
-%%-define(headerprefix, "x-mochiapi-").
-%%-define(dateheader, "x-mochiapi-date").
-
-
 -record(hmac_signature, {config = #hmac_config{} :: #hmac_config{},
-                         method,
-                         contentmd5,
-                         contenttype,
-                         date,
-                         headers,
-                         resource
+                         method :: atom(),
+                         contentmd5 = "" :: string(),
+                         contenttype = "" :: string(),
+                         date :: string(),
+                         headers = [],
+                         resource = "" :: string()
                         }).

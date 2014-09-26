@@ -3,20 +3,20 @@ erlang-hmac-sha
 
 An hmac sha library for building Amazon AWS-like signed REST API's in Erlang
 
-This is currently an example in mochiweb but I am going to disentangle it as a stand-alone application to make it work better with rebar.
+This works with WebMachine
 
-**UNTIL THEN** continue to use the mochiweb version.
 
 Introduction
 ------------
 
-This example shows how to make an Amazon-style HMAC authentication system for an API with mochiweb.
+This example shows how to make an Amazon-style HMAC authentication system for an API with
+WebMachine.
 
 Purpose
 -------
 
 The purpose of this example is to:
-* make it easy to implement an API in mochiweb
+* make it easy to implement an API in WebMachine
   - using a proven approach so that 'amateurs' don't have to reinvent crypto
 * make it easy to generate client libraries for that API so that client-side implementers can:
   - reuse closely related code examples
@@ -184,24 +184,6 @@ The reference implementation uses 5 constants defined in hmac_api.hrl.
 * dateheader
 * publickey
 * privatekey
-
-Building A Custom Implementation
---------------------------------
-
-The simplest custom implementation is to simply take the existing code and change the values of the following constants:
-* schema
-* headerprefix
-* dateheader
-
-If the API is to be used 'as is', please use the values which are commented out in hmac_api.hrl. This will make easier for software developers to work out which version of which client-side libraries they can use.
-
-Client libraries written in other languages than Erlang can reemployment the test suite in hmac_api_lib.erl.
-
-More sophisticated changes will involve changes to the canonicalization functions.
-
-Use of a generic schema should make reuse of client libraries easier across different platforms.
-
-If you develop an as-is client-side library in another language please consider submitting its code to this example.
 
 Deploying A Custom Implementation
 ---------------------------------
