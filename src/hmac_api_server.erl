@@ -6,10 +6,15 @@
 
 -export([
          cowboy_authorize_request/3,
-         mochi_authorize_request/3
+         cowboy_authorize_request/4,
+         mochi_authorize_request/3,
+         mochi_authorize_request/4
         ]).
 
 cowboy_authorize_request(Req, PublicKey, PrivateKey) ->
+    cowboy_authorize_request(Req, #hmac_config{}, PublicKey, PrivateKey).
+
+cowboy_authorize_request(Req, Config, PublicKey, PrivateKey) ->
     {Method, _}  = cowboy_req:method(Req),
     Method2      = list_to_existing_atom(binary_to_list(Method)),
     {Path, _}    = cowboy_req:path(Req),
@@ -22,7 +27,8 @@ cowboy_authorize_request(Req, PublicKey, PrivateKey) ->
     ContentType  = hma_util:get_header(Headers3, "content-type"),
     Date         = hma_util:get_header(Headers3, "date"),
     IncAuth      = hma_util:get_header(Headers3, "authorization"),
-    Signature = #hmac_signature{method      = Method2,
+    Signature = #hmac_signature{config      = Config,
+                                method      = Method2,
                                 contentmd5  = ContentMD5,
                                 contenttype = ContentType,
                                 date        = Date,
@@ -30,10 +36,14 @@ cowboy_authorize_request(Req, PublicKey, PrivateKey) ->
                                 resource    = Path2},
     hmac_api_lib:validate(PrivateKey, PublicKey, IncAuth, Signature).
 
+mochi_authorize_request(Req, PublicKey, PrivateKey) ->
+    mochi_authorize_request(Req, #hmac_config{}, PublicKey, PrivateKey).
+
 -spec mochi_authorize_request(_Req,
+                              Config :: #hmac_config{},
                               PublicKey ::string(),
                               PrivateKey :: string()) -> match | no_match.
-mochi_authorize_request(Req, PublicKey, PrivateKey) ->
+mochi_authorize_request(Req, Config, PublicKey, PrivateKey) ->
     Method      = Req:get(method),
     Path        = Req:get(path),
     Headers     = hma_util:normalise(mochiweb_headers:to_list(Req:get(headers))),
@@ -41,7 +51,8 @@ mochi_authorize_request(Req, PublicKey, PrivateKey) ->
     ContentType = hma_util:get_header(Headers, "content-type"),
     Date        = hma_util:get_header(Headers, "date"),
     IncAuth     = hma_util:get_header(Headers, "authorization"),
-    Signature = #hmac_signature{method = Method,
+    Signature = #hmac_signature{config = Config,
+                                method = Method,
                                 contentmd5 = ContentMD5,
                                 contenttype = ContentType,
                                 date = Date,
