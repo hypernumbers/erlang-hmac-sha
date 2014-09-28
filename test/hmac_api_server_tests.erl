@@ -10,10 +10,16 @@ cleanup(MockedModules) ->
     [ ?assert(meck:validate(M)) || M <- MockedModules],
     [ meck:unload(M) || M <- MockedModules].
 
+%% Use one of the AWS examples
+-define(PUBLIC_KEY, "0PN5J17HBGZHT7JJ3X82").
+-define(PRIVATE_KEY, "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o").
+
+%% private key lookup callback function
+private_key(_) ->
+    ?PRIVATE_KEY.
+
 wm_test_() ->
     MockedModules = [wrq],
-    %% Use one of the AWS examples
-    {PublicKey, PrivateKey} = {"0PN5J17HBGZHT7JJ3X82", "uV3F3YluFJax1cknvbcGwgjvx4QpvB+leU8dUj2o"},
     URL = "http://exAMPLE.Com:90/johnsmith/photos/puppy.jpg",
     Method = delete,
     ContentMD5 = "",
@@ -21,7 +27,7 @@ wm_test_() ->
     Date = "Tue, 27 Mar 2007 21:20:26 +0000",
     Headers = [{"x-amz-date", Date}],
 
-    Authorization = "AWS " ++ PublicKey ++ ":k3nL7gH3+PadhTEVn5Ip83xlYzk=",
+    Authorization = "AWS " ++ ?PUBLIC_KEY ++ ":k3nL7gH3+PadhTEVn5Ip83xlYzk=",
     {foreach,
      fun() -> setup(MockedModules),
       meck:expect(wrq, method, fun(req) -> Method end),
@@ -44,8 +50,24 @@ wm_test_() ->
      [
         {"validate an authorization header",
          fun() ->
-                 Got = hmac_api_server:wm_authenticate(req, hmac_aws:config(), PublicKey, PrivateKey),
-                 ?assertEqual(Got, match)
+                 Got = hmac_api_server:wm_authenticate(req, state, fun private_key/1, hmac_aws:config()),
+                 ?assertEqual(Got, {true, req, state})
+         end
+        },
+        {"wrong private key",
+         fun() ->
+                 %% This is not the key we're looking for
+                 PrivateKeyFun = fun(_Public) -> "theyarenotthedroidsyouarelookingfor" end,
+                 Got = hmac_api_server:wm_authenticate(req, state, PrivateKeyFun, hmac_aws:config()),
+                 ?assertEqual(Got, {"HMAC", req, state})
+         end
+        },
+        {"unknown private key",
+         fun() ->
+                 %% know not a key
+                 PrivateKeyFun = fun(_Public) -> undefined end,
+                 Got = hmac_api_server:wm_authenticate(req, state, PrivateKeyFun, hmac_aws:config()),
+                 ?assertEqual(Got, {"HMAC", req, state})
          end
         }
      ]
