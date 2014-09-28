@@ -1,12 +1,23 @@
 -module(hmac_api_client).
 
 -export([
+         signed_req/5,
+         signed_req/6,
          fire/0
         ]).
 
 -include("hmac_api.hrl").
 
--author("Hypernumbers Ltd <gordon@hypernumbers.com>").
+signed_req(PublicKey, PrivateKey, Path, Headers, Method, Body) ->
+    %% TODO: We should add Content-md5 if it's not there
+    Authorization = hmac_api_lib:sign(PrivateKey, PublicKey, Method, Path, Headers),
+    ibrowse:send_req(Path, [Authorization|Headers], Method, Body).
+
+signed_req(PublicKey, PrivateKey, Path, Headers, Method) ->
+
+    Authorization = hmac_api_lib:sign(PrivateKey, PublicKey, Method, Path, Headers),
+
+    ibrowse:send_req(Path, [Authorization|Headers], Method).
 
 fire() ->
     {PublicKey, PrivateKey} = hmac_api_lib:get_api_keypair(),
@@ -26,13 +37,12 @@ fire() ->
     %% as it reduces the errors caused by summer time and other
     %% conversion issues
     Method = post,
-    Headers = [{"content-type", "application/json"},
+    ContentType = "application/json",
+    Headers = [{"content-type", ContentType},
                {"date",         "Sun, 10 Jul 2011 05:07:19"},
                {"accept",       "application/json"}],
-    ContentType = "application/json",
     Body = "{'hey': 'ho'}",
     Path = "/",
-    HTTPAuthHeader = hmac_api_lib:sign(PrivateKey, PublicKey, Method, Path,
-                                       Headers, ContentType),
+    HTTPAuthHeader = hmac_api_lib:sign(PrivateKey, PublicKey, Method, Path, Headers),
     httpc:request(Method, {URL ++ Path, [HTTPAuthHeader | Headers],
                            ContentType, Body}, [], []).

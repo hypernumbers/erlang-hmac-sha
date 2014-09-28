@@ -26,9 +26,9 @@
 %%% THE AMAZON API MUNGES HOSTNAME AND PATHS IN A CUSTOM WAY
 %%% THIS IMPLEMENTATION DOESN'T
 -export([
+         sign/5,
          sign/6,
 
-         sign/7,
          validate/4,
 
          get_api_keypair/0,
@@ -42,10 +42,11 @@
 %%%                                                                          %%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-sign(PrivateKey, PublicKey, Method, URL, Headers, ContentType) ->
-    sign(#hmac_config{}, PrivateKey, PublicKey, Method, URL, Headers, ContentType).
-sign(#hmac_config{schema = Schema} = Config, PrivateKey, PublicKey, Method, URL, Headers, ContentType) ->
+sign(PrivateKey, PublicKey, Method, URL, Headers) ->
+    sign(#hmac_config{}, PrivateKey, PublicKey, Method, URL, Headers).
+sign(#hmac_config{schema = Schema} = Config, PrivateKey, PublicKey, Method, URL, Headers) ->
     Headers2 = hma_util:normalise(Headers),
+    ContentType = hma_util:get_header(Headers2, "content-type"),
     ContentMD5 = hma_util:get_header(Headers2, "content-md5"),
     Date = hma_util:get_header(Headers2, "date"),
     Signature = #hmac_signature{config = Config,

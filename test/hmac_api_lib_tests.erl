@@ -240,12 +240,10 @@ roundtrip_test() ->
     {PublicKey, PrivateKey} = hmac_api_lib:get_api_keypair(),
     Method = post,
     Path = "http://example.com/rules",
-    ContentType = "",
     Date = "Sun, 10 Jul 2011 05:07:19 UTC",
     Headers = [{"date", Date}],
 
-    {_Name, Authorization} = hmac_api_lib:sign(PrivateKey, PublicKey, Method, Path, Headers,
-                                                ContentType),
+    {_Name, Authorization} = hmac_api_lib:sign(PrivateKey, PublicKey, Method, Path, Headers),
     ?assertEqual(hmac_api_lib:validate(PrivateKey, PublicKey, Authorization,
                                        #hmac_signature{
                                           date = Date,
@@ -259,7 +257,6 @@ roundtrip_test() ->
 paths_test() ->
     {PublicKey, PrivateKey} = hmac_api_lib:get_api_keypair(),
     Method = post,
-    ContentType = "",
     Date = "Sun, 10 Jul 2011 05:07:19 UTC",
     Headers = [{"date", Date}],
 
@@ -267,12 +264,9 @@ paths_test() ->
     HttpPath = "http://example.com/rules",
     HttpsPath = "https://example.com/rules",
 
-    {_Name, BareAuthorization} = hmac_api_lib:sign(PrivateKey, PublicKey, Method, BarePath, Headers,
-                                                ContentType),
-    {_Name, HttpAuthorization} = hmac_api_lib:sign(PrivateKey, PublicKey, Method, HttpPath, Headers,
-                                                ContentType),
-    {_Name, HttpsAuthorization} = hmac_api_lib:sign(PrivateKey, PublicKey, Method, HttpsPath, Headers,
-                                                ContentType),
+    {_Name, BareAuthorization} = hmac_api_lib:sign(PrivateKey, PublicKey, Method, BarePath, Headers),
+    {_Name, HttpAuthorization} = hmac_api_lib:sign(PrivateKey, PublicKey, Method, HttpPath, Headers),
+    {_Name, HttpsAuthorization} = hmac_api_lib:sign(PrivateKey, PublicKey, Method, HttpsPath, Headers),
 
     ?assertEqual(BareAuthorization, HttpAuthorization),
     ?assertEqual(HttpAuthorization, HttpsAuthorization).
@@ -280,7 +274,6 @@ paths_test() ->
 query_test() ->
     {PublicKey, PrivateKey} = hmac_api_lib:get_api_keypair(),
     Method = post,
-    ContentType = "",
     Date = "Sun, 10 Jul 2011 05:07:19 UTC",
     Headers = [{"date", Date}],
 
@@ -288,9 +281,9 @@ query_test() ->
     BarFoo = "http://example.com/rules?baz=hello&foo=bar",
 
     {_Name, FooBarAuthorization} = hmac_api_lib:sign(PrivateKey, PublicKey, Method,
-                                                     FooBar, Headers, ContentType),
+                                                     FooBar, Headers),
     {_Name, BarFooAuthorization} = hmac_api_lib:sign(PrivateKey, PublicKey, Method,
-                                                     BarFoo, Headers, ContentType),
+                                                     BarFoo, Headers),
 
     ?assertEqual(FooBarAuthorization, BarFooAuthorization).
 
