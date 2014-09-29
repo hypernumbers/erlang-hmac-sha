@@ -241,16 +241,15 @@ roundtrip_test() ->
     Method = post,
     Path = "http://example.com/rules",
     Date = "Sun, 10 Jul 2011 05:07:19 UTC",
-    Headers = [{"date", Date}],
+    Headers = [{"Date", Date}],
 
     {_Name, Authorization} = hmac_api_lib:sign(PrivateKey, PublicKey, Method, Path, Headers),
     ?assertEqual(hmac_api_lib:validate(PrivateKey, PublicKey, Authorization,
-                                       #hmac_signature{
-                                          date = Date,
-                                          method = Method,
-                                          headers = Headers,
-                                          resource = Path
-                                         }),
+                                       #hmac_signature{date = Date,
+                                                       method = Method,
+                                                       headers = Headers,
+                                                       resource = Path
+                                                      }),
                  match),
     ok.
 
@@ -258,7 +257,7 @@ paths_test() ->
     {PublicKey, PrivateKey} = hmac_api_lib:get_api_keypair(),
     Method = post,
     Date = "Sun, 10 Jul 2011 05:07:19 UTC",
-    Headers = [{"date", Date}],
+    Headers = [{"X-HMAC-Date", Date}],
 
     BarePath = "/rules",
     HttpPath = "http://example.com/rules",
@@ -275,7 +274,7 @@ query_test() ->
     {PublicKey, PrivateKey} = hmac_api_lib:get_api_keypair(),
     Method = post,
     Date = "Sun, 10 Jul 2011 05:07:19 UTC",
-    Headers = [{"date", Date}],
+    Headers = [{"X-HMAC-Date", Date}],
 
     FooBar = "http://example.com/rules?foo=bar&baz=hello",
     BarFoo = "http://example.com/rules?baz=hello&foo=bar",

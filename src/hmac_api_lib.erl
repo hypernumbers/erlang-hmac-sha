@@ -46,9 +46,9 @@ sign(PrivateKey, PublicKey, Method, URL, Headers) ->
     sign(#hmac_config{}, PrivateKey, PublicKey, Method, URL, Headers).
 sign(#hmac_config{schema = Schema} = Config, PrivateKey, PublicKey, Method, URL, Headers) ->
     Headers2 = hma_util:normalise(Headers),
-    ContentType = hma_util:get_header(Headers2, "content-type"),
-    ContentMD5 = hma_util:get_header(Headers2, "content-md5"),
-    Date = hma_util:get_header(Headers2, "date"),
+    ContentType = hma_util:get_header(Headers2, "Content-Type"),
+    ContentMD5 = hma_util:get_header(Headers2, "Content-MD5"),
+    Date = hma_util:get_header(Headers2, "Date"),
     Signature = #hmac_signature{config = Config,
                                 method = Method,
                                 contentmd5 = ContentMD5,
@@ -115,34 +115,8 @@ sign_data(PrivateKey, Str) when is_list(Str) ->
     binary_to_list(base64:encode(crypto:hmac(sha, PrivateKey, Sign))).
 
 canonicalise_headers(_Config, []) -> "\n";
-canonicalise_headers(Config, List) when is_list(List) ->
-    List2 = [{string:to_lower(K), V} || {K, V} <- lists:sort(List)],
-    c_headers2(Config, consolidate(List2, []), []).
-
-c_headers2(_Config, [], Acc) ->
-    string:join(Acc, "\n") ++ "\n";
-c_headers2(#hmac_config{header_prefix = HeaderPrefix} = Config,
-           [{Header, Key} | T], Acc) ->
-    case lists:prefix(HeaderPrefix, Header) of
-        true ->
-            Hd = string:strip(Header) ++ ":" ++ string:strip(Key),
-            c_headers2(Config, T, [Hd | Acc]);
-        false ->
-            c_headers2(Config, T, Acc)
-    end.
-
-consolidate([H | []], Acc) -> [H | Acc];
-consolidate([{H, K1}, {H, K2} | Rest], Acc) ->
-    consolidate([{H, join(K1, K2)} | Rest], Acc);
-consolidate([{H1, K1}, {H2, K2} | Rest], Acc) ->
-    consolidate([{rectify(H2), rectify(K2)} | Rest], [{H1, K1} | Acc]).
-
-join(A, B) -> string:strip(A) ++ ";" ++ string:strip(B).
-
-%% removes line spacing as per RFC 2616 Section 4.2
-rectify(String) ->
-    Re = "[\x20* | \t*]+",
-    re:replace(String, Re, " ", [{return, list}, global]).
+canonicalise_headers(#hmac_config{header_prefix = Prefix}, List) when is_list(List) ->
+    hma_util:canonicalise_headers(Prefix, List).
 
 canonicalise_resource("http://"  ++ Rest) -> c_res2(Rest);
 canonicalise_resource("https://" ++ Rest) -> c_res2(Rest);
